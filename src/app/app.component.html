@@ -1,1 +1,3 @@
-<input type="file" placeholder="Select file" (change)="fileChanged($event)">
+<div style="display: flex; flex-direction: column;"></div>
+<input *ngIf="uploadState === 0" type="file" placeholder="Select file" (change)="fileChanged($event)">
+<div *ngIf="uploadState === 1" [style.width]="progressPercent" class="progress"></div>

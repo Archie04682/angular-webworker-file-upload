@@ -1,6 +1,10 @@
 /// <reference lib="webworker" />
 
 addEventListener('message', ({ data }) => {
+  if (data.terminate) {
+    return;
+  }
+
   if (!data.url && !data.file && !data.chunkSize && !data.bearer) return;
   const file: File = data.file;
   const chunkSize: number = data.chunkSize;
@@ -10,22 +14,28 @@ addEventListener('message', ({ data }) => {
     'Authentication': `Bearer ${data.bearer}`,
     'Content-Part': ''
   };
+  const totalChunks = Math.ceil(file.size / chunkSize);
 
-  uploadChunk(url, headers, file, 0, chunkSize, uploadId, (start, total) => {
-    postMessage({start: start, total: total});
+  uploadChunk(url, headers, file, 0, chunkSize, totalChunks, uploadId, (uploadedChunk: number) => {
+    postMessage({uploadedChunk: uploadedChunk, totalChunks: totalChunks});
   });
 
 });
 
-function uploadChunk(url: URL | string, headers: {[key: string]: any}, file: File, start: number, chunkSize: number, uploadId: string, callback: (uploaded: number, total: number) => void) {
+function uploadChunk(url: URL | string, headers: {[key: string]: any}, 
+  file: File, currentChunk: number, totalChunks: number,chunkSize: number, uploadId: string, 
+  callback: (uploadedChunk: number) => void) {
+  const start = currentChunk * chunkSize;
   const chunk = createChunk(file, start, chunkSize);
   const form = createForm(uploadId, file.name, chunk);
-  headers['Content-Part'] = createContentRangeHeaderValue(start, chunk.size, file.size);
+  headers['Content-Part'] = createContentRangeHeaderValue(currentChunk, totalChunks);
   upload(url, form, headers, () => {
-    start += chunk.size;
-    callback(start, file.size);
-    if (start < file.size) {
-      uploadChunk(url, headers, file, start, chunkSize, uploadId, callback);
+    currentChunk++;
+    callback(currentChunk);
+    if (currentChunk < totalChunks) {
+      uploadChunk(url, headers, file, currentChunk, totalChunks, chunkSize, uploadId, callback);
+    } else {
+      return;
     }
   });
 }
@@ -47,8 +57,8 @@ function createForm(uploadId: string, filename: string, chunk: Blob): FormData {
   return form;
 }
 
-function createContentRangeHeaderValue(start: number, length: number, total: number): string {
-  return `${start}-${start + length - 1}/${total}`;
+function createContentRangeHeaderValue(currentChunk: number, totalChunks: number): string {
+  return `${currentChunk}/${totalChunks}`;
 }
 
 function upload(url: string | URL, chunkForm: FormData, headers: {[key: string]: any}, callback: () => void) {
